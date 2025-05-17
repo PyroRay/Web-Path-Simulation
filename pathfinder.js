@@ -3,9 +3,21 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 // <---------- Data Structures ---------->
-const obstacles = []; // List of wall rectangles
-const nodes = []; // Key points (corners, start/goal)
-const edges = []; // Connections between visible nodes
+// List of wall rectangles
+// Each obstacle contains: { x: Number, y: Number, width: Number, height: Number }
+const obstacles = [];
+
+// Key points (corners, start/goal)
+// Each node contains: { x: Number, y: Number, id: Number, parentWall?: Number }
+const nodes = [];
+
+// Connections between visible nodes
+// Each edge contains: { from: Node, to: Node }
+const edges = [];
+
+// Create an adjacency list out of the edges and nodes
+// Each entry has key = Number (node.id), value = Array of { node: Node, weight: Number }
+const graph = new Map();
 
 // <---------- State Variables ---------->
 let mode = "wall"; // Current draw mode: 'wall', 'start', or 'goal'
@@ -14,6 +26,18 @@ let goalNode = null;
 
 let isDrawing = false; // Mouse drag tracking
 let startX, startY; // Mouse start position
+
+let nodeIdCounter = 0; // Counter to track current node number
+
+// <---------- Debugging Features ---------->
+// sends message to the log on the html page
+function log(message) {
+  const logPanel = document.getElementById("logPanel");
+  const p = document.createElement("div");
+  p.textContent = message;
+  logPanel.appendChild(p);
+  logPanel.scrollTop = logPanel.scrollHeight; // Auto-scroll to bottom
+}
 
 // <---------- Mouse Handlers ---------->
 
@@ -50,15 +74,32 @@ canvas.addEventListener("mouseup", (e) => {
     for (const corner of corners) {
       nodes.push({
         ...corner,
-        id: nodes.length,
+        id: nodeIdCounter++,
         parentWall: obstacles.length, // store which wall it came from
       });
     }
+    log(`Created wall at (${x}, ${y}) with width ${w} and height ${h}`);
   } else if (mode === "start" || mode === "goal") {
-    const node = { x: x + w / 2, y: y + h / 2, id: nodes.length };
+    // Remove old start/goal nodes if they exist
+    if (mode === "start" && startNode) {
+      const index = nodes.indexOf(startNode);
+      if (index != -1) nodes.splice(index, 1);
+    }
+    if (mode === "goal" && goalNode) {
+      const index = nodes.indexOf(goalNode);
+      if (index != -1) nodes.splice(index, 1);
+    }
+    // Add the new start/goal node
+    const node = { x: x + w / 2, y: y + h / 2, id: nodeIdCounter++ };
     nodes.push(node);
-    if (mode === "start") startNode = node;
-    if (mode === "goal") goalNode = node;
+    if (mode === "start") {
+      startNode = node;
+      log(`Set start node at (${node.x.toFixed(1)}, ${node.y.toFixed(1)})`);
+    }
+    if (mode === "goal") {
+      goalNode = node;
+      log(`Set goal node at (${node.x.toFixed(1)}, ${node.y.toFixed(1)})`);
+    }
   }
 
   draw();
@@ -72,11 +113,27 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "g") mode = "goal";
   else if (e.key === "w") mode = "wall";
   else if (e.key === "Enter") {
-    console.log("Beginning building of graph");
+    log("Beginning building of graph");
     buildGraph();
-    console.log("Beginning drawing");
+    log("Beginning drawing");
     draw();
+    log("Render complete");
   }
+});
+
+// <---------- Other Listeners ---------->
+
+// Clear the "board" and reset all variables
+document.getElementById("clearButton").addEventListener("click", () => {
+  obstacles.length = 0;
+  nodes.length = 0;
+  edges.length = 0;
+  graph.clear();
+  startNode = null;
+  goalNode = null;
+  if (typeof nodeIdCounter !== "undefined") nodeIdCounter = 0; // if you added this earlier
+  log("Cleared all obstacles, nodes, and paths.");
+  draw();
 });
 
 // <---------- Draw Everything to Canvas ---------->
@@ -146,6 +203,21 @@ function buildGraph() {
       }
     }
   }
+
+  // Convert edges to an adjacency list for use by pathfinding algorithm
+  for (const edge of edges) {
+    const dx = edge.from.x - edge.to.x;
+    const dy = edge.from.y - edge.to.y;
+    const dist = Math.hypot(dx, dy); // distant will be the weight
+
+    // Make sure each node has an initialized list of neighbours in the adjacency list
+    if (!graph.has(edge.from.id)) {
+      graph.set(edge.from.id, []);
+    }
+
+    // Push each node onto the adjacency list
+    graph.get(edge.from.id).push({ node: edge.to, weight: dist });
+  }
 }
 
 // <---------- Line of Sight Checker ---------->
@@ -176,7 +248,7 @@ function lineIntersectsRect(a, b, r) {
   // Check line intersection with any edge of the rectangle
   for (let [p1, p2] of edges) {
     if (lineIntersectsLine(a, b, p1, p2)) {
-      console.log("Edge intersect detected.");
+      // log("Edge intersect detected.");
       return true;
     }
   }
@@ -188,7 +260,7 @@ function lineIntersectsRect(a, b, r) {
   const maxY = r.y + r.height;
 
   if (pointInRect(a, r) || pointInRect(b, r)) {
-    console.log("Point inside rectangle — intersection.");
+    // log("Point inside rectangle — intersection.");
     return true;
   }
 
@@ -196,7 +268,7 @@ function lineIntersectsRect(a, b, r) {
     ((a.x < minX && b.x > maxX) || (b.x < minX && a.x > maxX)) &&
     ((a.y < minY && b.y > maxY) || (b.y < minY && a.y > maxY))
   ) {
-    console.log("Segment crosses through the rectangle's interior.");
+    // log("Segment crosses through the rectangle's interior.");
     return true;
   }
 
@@ -205,15 +277,22 @@ function lineIntersectsRect(a, b, r) {
 
 // <---------- Line Segment Intersection ---------->
 
+// Checks whether two line segments a1<–>a2 and b1<–>b2) intersect
 function lineIntersectsLine(a1, a2, b1, b2) {
+  // Compute the determinant of the 2D cross product of direction vectors
+  // This tells us if the lines are parallel (intersection impossible when parallel)
   const det = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
-  if (det === 0) return false; // lines are parallel
+  if (det === 0) return false;
 
+  // Compute lambda: where on a1<–>a2 the intersection occurs (lambda between 0 and 1 => within segment)
   const lambda =
     ((b2.y - b1.y) * (b2.x - a1.x) + (b1.x - b2.x) * (b2.y - a1.y)) / det;
+
+  // Compute gamma: where on b1<–>b2 the intersection occurs (gamma between 0 and 1 => within segment)
   const gamma =
     ((a1.y - a2.y) * (b2.x - a1.x) + (a2.x - a1.x) * (b2.y - a1.y)) / det;
 
+  // Return true only if the intersection is strictly inside both segments (not just touching endpoints)
   return 0 < lambda && lambda < 1 && 0 < gamma && gamma < 1;
 }
 
