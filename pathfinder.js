@@ -169,6 +169,9 @@ function draw() {
 
   // Draw nodes
   for (let node of nodes) {
+    // if this is a wall-corner (has parentWall), skip it
+    if (node.parentWall !== undefined) continue;
+
     ctx.fillStyle =
       node === startNode ? "green" : node === goalNode ? "red" : "blue";
     ctx.beginPath();
@@ -203,6 +206,7 @@ function drawPath(path) {
 
 function buildGraph() {
   edges.length = 0;
+  graph.clear();
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
