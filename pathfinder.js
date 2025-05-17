@@ -28,6 +28,7 @@ let isDrawing = false; // Mouse drag tracking
 let startX, startY; // Mouse start position
 
 let nodeIdCounter = 0; // Counter to track current node number
+let obstacleIdCounter = 0; // Counter to track current node number
 
 // <---------- Debugging Features ---------->
 // sends message to the log on the html page
@@ -75,9 +76,10 @@ canvas.addEventListener("mouseup", (e) => {
       nodes.push({
         ...corner,
         id: nodeIdCounter++,
-        parentWall: obstacles.length, // store which wall it came from
+        parentWall: obstacleIdCounter, // store which wall it came from
       });
     }
+    obstacleIdCounter++;
     log(`Created wall at (${x}, ${y}) with width ${w} and height ${h}`);
   } else if (mode === "start" || mode === "goal") {
     // Remove old start/goal nodes if they exist
@@ -179,12 +181,12 @@ function drawPath(path) {
   // Log the path to the debug panel
   const pathString = path
     .map((node) => `(${node.x.toFixed(1)}, ${node.y.toFixed(1)})`)
-    .join(" → ");
+    .join(" -> ");
   log(`Path found: ${pathString}`);
 
   // Correct path will be lime and of width 3
   ctx.strokeStyle = "lime";
-  ctx.linewidth = 3;
+  ctx.lineWidth = 3;
   // Create the path
   ctx.beginPath();
   ctx.moveTo(path[0].x, path[0].y);
@@ -194,7 +196,7 @@ function drawPath(path) {
   // Render the path
   ctx.stroke();
   // reset linewidth (strokeStyle is changed in every draw so should be fine)
-  ctx.linewidth = 1;
+  ctx.lineWidth = 1;
 }
 
 // <---------- Build Visibility Graph ---------->
@@ -292,45 +294,27 @@ function isVisible(a, b) {
 // <---------- Rectangle Collision Check ---------->
 
 function lineIntersectsRect(a, b, r) {
-  // Define rectangle corners
-  const topLeft = { x: r.x, y: r.y };
-  const topRight = { x: r.x + r.width, y: r.y };
-  const bottomLeft = { x: r.x, y: r.y + r.height };
-  const bottomRight = { x: r.x + r.width, y: r.y + r.height };
-
-  const edges = [
-    [topLeft, topRight],
-    [topLeft, bottomLeft],
-    [topRight, bottomRight],
-    [bottomLeft, bottomRight],
+  // 1) Define corners and perform the edge test
+  const corners = [
+    { x: r.x, y: r.y },
+    { x: r.x + r.width, y: r.y },
+    { x: r.x, y: r.y + r.height },
+    { x: r.x + r.width, y: r.y + r.height },
   ];
 
-  // Check line intersection with any edge of the rectangle
-  for (let [p1, p2] of edges) {
-    if (lineIntersectsLine(a, b, p1, p2)) {
-      // log("Edge intersect detected.");
-      return true;
-    }
+  const edges = [
+    [corners[0], corners[1]],
+    [corners[0], corners[2]],
+    [corners[1], corners[3]],
+    [corners[2], corners[3]],
+  ];
+
+  for (const [p1, p2] of edges) {
+    if (lineIntersectsLine(a, b, p1, p2)) return true;
   }
 
-  // Additional check: does the segment pass through the rectangle's interior
-  const minX = r.x;
-  const maxX = r.x + r.width;
-  const minY = r.y;
-  const maxY = r.y + r.height;
-
-  if (pointInRect(a, r) || pointInRect(b, r)) {
-    // log("Point inside rectangle — intersection.");
-    return true;
-  }
-
-  if (
-    ((a.x < minX && b.x > maxX) || (b.x < minX && a.x > maxX)) &&
-    ((a.y < minY && b.y > maxY) || (b.y < minY && a.y > maxY))
-  ) {
-    // log("Segment crosses through the rectangle's interior.");
-    return true;
-  }
+  // 2) Test if endpoints are inside the rectangle
+  if (pointInRect(a, r) || pointInRect(b, r)) return true;
 
   return false;
 }
