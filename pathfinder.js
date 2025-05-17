@@ -302,5 +302,43 @@ function pointInRect(p, r) {
   return p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height;
 }
 
+// <---------- Pathfinding Helpers ---------->
+function heuristic(a, b) {
+  // Return the Euclidean distance
+  // Works as a Admissable Heuristic as the Euclidean distance will always be <= the actual distance
+  // No matter what as it is the minimum distance between two points in 2d space
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// <---------- Pathfinding Algorihtms ---------->
+
+// Run A* Pathfinding Alrorithm on our Graph
+function runAStar(startNode, goalNode) {
+  // Set to represent the search frontier for A*
+  const frontier = new Set();
+  frontier.add(startNode);
+
+  // Map to store the previous node in the path before the node.id
+  const cameFrom = new Map();
+
+  // Cost from the startNode to the node.id
+  const costFromStart = new Map();
+  // Cost from the startNode to the node.id + estimated distance from node.id to the goalNode
+  const estimatedTotalCost = new Map();
+
+  // Init the nodes
+  for (const node of nodes) {
+    // Set costs to be infinite for reasons
+    costFromStart.set(node.id, Infinity);
+    estimatedTotalCost.set(node.id, Infinity);
+  }
+  // Cost to go from startNode to startNode is zero
+  costFromStart.set(startNode.id, 0);
+  // Cost to go from startNode to goalNode is simply the heuristic
+  estimatedTotalCost.set(startNode.id, heuristic(startNode, goalNode));
+
+  // Logic for A* algorithm goes here
+}
+
 // Initial draw
 draw();
