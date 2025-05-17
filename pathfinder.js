@@ -136,7 +136,16 @@ document.getElementById("clearButton").addEventListener("click", () => {
   draw();
 });
 
-// <---------- Draw Everything to Canvas ---------->
+// Do A* Algorithm
+document.getElementById("beginAStar").addEventListener("click", () => {
+  if (startNode && goalNode) {
+    runAStar(startNode, goalNode);
+  } else {
+    log("Please place both a start and goal node.");
+  }
+});
+
+// <---------- Draw to Canvas ---------->
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -164,6 +173,28 @@ function draw() {
     ctx.arc(node.x, node.y, 5, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+function drawPath(path) {
+  // Log the path to the debug panel
+  const pathString = path
+    .map((node) => `(${node.x.toFixed(1)}, ${node.y.toFixed(1)})`)
+    .join(" → ");
+  log(`Path found: ${pathString}`);
+
+  // Correct path will be lime and of width 3
+  ctx.strokeStyle = "lime";
+  ctx.linewidth = 3;
+  // Create the path
+  ctx.beginPath();
+  ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) {
+    ctx.lineTo(path[i].x, path[i].y);
+  }
+  // Render the path
+  ctx.stroke();
+  // reset linewidth (strokeStyle is changed in every draw so should be fine)
+  ctx.linewidth = 1;
 }
 
 // <---------- Build Visibility Graph ---------->
@@ -217,6 +248,35 @@ function buildGraph() {
 
     // Push each node onto the adjacency list
     graph.get(edge.from.id).push({ node: edge.to, weight: dist });
+  }
+
+  log("List of nodes:");
+  for (const node of nodes) {
+    let type = "wall corner";
+    if (node === startNode) type = "start";
+    else if (node === goalNode) type = "goal";
+
+    log(
+      `Node ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) — ${type}`
+    );
+  }
+
+  log("List of edges:");
+  for (const edge of edges) {
+    log(`From Node ${edge.from.id} -> Node ${edge.to.id}`);
+  }
+
+  log("Graph adjacency list:");
+  for (const [nodeId, neighbors] of graph.entries()) {
+    const neighborInfo = neighbors
+      .map(
+        (n) =>
+          `-> Node ${n.node.id} (${n.node.x.toFixed(1)}, ${n.node.y.toFixed(
+            1
+          )}) [w=${n.weight.toFixed(1)}]`
+      )
+      .join(", ");
+    log(`Node ${nodeId}: ${neighborInfo}`);
   }
 }
 
@@ -303,6 +363,8 @@ function pointInRect(p, r) {
 }
 
 // <---------- Pathfinding Helpers ---------->
+
+// Main heuristic function for A* (and potentially GBFS)
 function heuristic(a, b) {
   // Return the Euclidean distance
   // Works as a Admissable Heuristic as the Euclidean distance will always be <= the actual distance
@@ -310,11 +372,43 @@ function heuristic(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+// Find the node in the frontier with the lowest cost (will change if I decide to use Priority Queue)
+function getLowestEstimatecCost(frontier, estimatedTotalCost) {
+  let bestNode = null;
+  let bestScore = Infinity;
+
+  for (const node of frontier) {
+    const score = estimatedTotalCost.get(node.id);
+    if (score < bestScore) {
+      bestScore = score;
+      bestNode = node;
+    }
+  }
+
+  return bestNode;
+}
+
+// Reconstruct the path based on the cameFrom map and draw the path
+function constructPath(cameFrom, currentNode) {
+  log("Constructing Path");
+
+  const path = [currentNode];
+  // While we can still continue down the chain, we build the path step-by-step
+  while (cameFrom.has(currentNode.id)) {
+    log("Backtracking");
+    currentNode = cameFrom.get(currentNode.id);
+    path.unshift(currentNode);
+  }
+
+  drawPath(path);
+}
+
 // <---------- Pathfinding Algorihtms ---------->
 
 // Run A* Pathfinding Alrorithm on our Graph
 function runAStar(startNode, goalNode) {
   // Set to represent the search frontier for A*
+  // More optimal to use a priority queue, but since this is just a small demo I'll add it later
   const frontier = new Set();
   frontier.add(startNode);
 
@@ -338,6 +432,56 @@ function runAStar(startNode, goalNode) {
   estimatedTotalCost.set(startNode.id, heuristic(startNode, goalNode));
 
   // Logic for A* algorithm goes here
+  while (frontier.size > 0) {
+    log("in while loop");
+    // Find the node in the frontier with the lowest estimated cost
+    const currentNode = getLowestEstimatecCost(frontier, estimatedTotalCost);
+
+    // If we have arrived at the goal, trace the path and draw it
+    if (currentNode === goalNode) {
+      // Log the cameFrom map contents
+      log("cameFrom map:");
+      for (const [nodeId, parentNode] of cameFrom.entries()) {
+        log(
+          `  Node ${nodeId} <- Node ${parentNode.id} (${parentNode.x.toFixed(
+            1
+          )}, ${parentNode.y.toFixed(1)})`
+        );
+      }
+      // Check to make sure goal is correct
+      log(
+        `Reached goal: (${currentNode.x.toFixed(1)}, ${currentNode.y.toFixed(
+          1
+        )})`
+      );
+      log(
+        `Goal should be: (${goalNode.x.toFixed(1)}, ${goalNode.y.toFixed(1)})`
+      );
+      constructPath(cameFrom, currentNode);
+      return;
+    }
+
+    // "pop" the current node from the frontier
+    frontier.delete(currentNode);
+
+    // Grab the adjancency list of the current node or set to an empty list if undefined
+    const neighbours = graph.get(currentNode.id) || [];
+    // Iterate through all the neighbours and find the lowest cost
+    for (const neighbour of neighbours) {
+      log(`Is current node the start node? ${currentNode.id === startNode.id}`);
+      const tentCost = costFromStart.get(currentNode.id) + neighbour.weight;
+      if (tentCost < costFromStart.get(neighbour.node.id)) {
+        cameFrom.set(neighbour.node.id, currentNode);
+        costFromStart.set(neighbour.node.id, tentCost);
+        estimatedTotalCost.set(
+          neighbour.node.id,
+          tentCost + heuristic(neighbour.node, goalNode)
+        );
+        frontier.add(neighbour.node);
+      }
+    }
+  }
+  log("No path exists");
 }
 
 // Initial draw
